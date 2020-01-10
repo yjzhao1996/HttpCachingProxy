@@ -1,0 +1,193 @@
+﻿Danger log for Proxy
+Yz476  ny38
+
+
+
+
+Cache policy 
+A cache implemented by an unordered map.
+A response’s header is used as a key, the whole message is stored as a value.
+Cache size is 100 responses.
+If the capacity is full, the map will randomly replace an existed pair with the new cached response. 
+The time to clean expired response is when the same response is encountered. The program checks its validity to determine if it is ok to clean it. 
+
+
+Synchronization
+Used mutex lock in the cache to achieve synchronization. The critical sections are: when a response is about to be pushed into the map; when a request is about to start scanning the cache.
+
+
+Exception guarantee
+Our program can handle socket-related errors, like socket(), bind(), connect(), send() and recv(). 
+If a request fails, that thread exits and TCP will handle it by resending the request to make a new thread. This way, no side effect is caused.So our exception safety level is a strong guarantee.  Due to the fact that this program is a proxy, it does little harm even if it crashes.
+
+
+Failures and handle
+
+
+2.20
+
+
+(Fixed)Cannot open a website before multithread was implemented.
+Handle: Because to open a website needs multiple requests, so this is fixed after multithread is implemented.
+
+
+(Fixed) When receiving response from the origin server, our program got stuck in a while loop.
+Handle: The program should actively check the content-length field in the response header and actively end receiving when the expected size of data is received. The origin server will not close the connection.
+
+
+2.23
+
+
+(Fixed)Tested with a news page from Sina News and can only display the basic HTML and texts of the page. Failed to load Images and videoes.
+
+
+(Fixed)Tested with big websites like ESPN.com, Youku.com, Sina.com where there are transmissions of chunks of data. The proxy cannot recv chunks of data correctly and will keep receiving even after the browser was closed.
+Handle:  in the previous implementation, we check each chunk to see if there exist “0\r\n\r\n” in the chunk. However, chances are that this ending pattern message can also be divided before it was sent. When it happens, the program is stuck in a infinite while loop. So we append every chunk into a big chunk and check the big chunk to find the ending pattern.
+
+
+2.24 
+
+
+Need to run with sudo to have the authority to write into var/log/erss/proxy.log
+
+
+(Fixed)Tested with big websites like sina.com and auto.sina.com.cn in two tabs. It took a long time to load the web page. The program seemed paused for about a minute. Then the program crashed and the testing laptop was forced to be turned off by the OS.
+Handle: same as the previous question.
+
+
+If run with Valgrind and exit with Ctrl-x, a memory leak happened.
+
+
+2.25
+
+
+Proxy has no reaction when tested with QQ mail settings change.
+Handle: No handle, might have something to do with smpt protocol, so this issue is reasonable.
+
+
+
+=====================================================================================
+
+
+
+Testcase of HW2 proxy
+
+
+Hi, this is the test document of our proxy.
+
+
+The browser we test with is 
+* Firefox.
+
+
+We test:
+* GET, CONNECT;
+* POST;
+* Request Error;
+* Pressure Test;
+
+
+
+
+1.GET and CONNECT
+
+
+Followings are the different types of websites we tested:
+
+
+Text websites:
+https://www.google.com/
+https://tools.ietf.org/html/rfc7231
+
+
+Video websites:
+https://www.youtube.com/
+http://youku.com/
+
+
+Some general websites:
+https://www.rabihyounes.com/650s19.html
+https://www.nba.com/
+
+
+Chunked website:
+http://www.httpwatch.com/httpgallery/chunked/chunkedimage.aspx
+
+
+Heavy-load websites:
+http://www.espn.com/
+https://www.sina.com.cn/
+
+
+HTTP website:
+Specifically tested with unsecured HTTP website like:
+http://auto.sina.com.cn/
+http://travel.sina.com.cn/
+http://bj.leju.com/#source=pc_sina_tydh1&source_ext=pc_sina
+
+
+Conclusion:
+        Our proxy works fine with all the above websites. By reading our log file, we found that nowadays most websites use HTTPS protocol so CONNECT is heavily used, especially by video websites. GET is another mostly-used method. Sometimes the browser itself will also send GET requests. 
+        Chunked data is our pain in the ass during the process. Content heavy websites tend to send chunked data and break our proxy. The main issue is about the while loop responsible for receiving data, many edge cases are encountered during our testing. We recorded them in our danger log.
+
+
+
+
+2.POST
+From the previous testing, we barely encountered a POST request. Here is how we specifically test POST:
+
+
+a. Man-made POST
+Put the following example header in a file called input.txt:
+
+
+POST /path/script.cgi HTTP/1.0 
+From: frog@jmarshall.com 
+User-Agent: HTTPTool/1.0 
+Content-Type: application/x-www-form-urlencoded 
+Content-Length: 32 
+
+
+
+
+home=Cosby&favorite+flavor=flies
+
+
+
+
+Then use 
+
+
+cat input.txt | nc vcm-8209.vm.duke.edu 12345 to manually make a POST request
+
+
+Finally,  in log file we found 
+
+
+POST /path/script.cgi HTTP/1.0 from ip @ time
+
+
+This means this post request has successfully proceeded.
+
+
+b. Test with myUber website
+In our implementation of HW1 myUber, when the driver changes personal info, vehicle type for example, the website will create a POST request to the server. 
+And we tested it and it worked.
+
+
+
+
+3.Request Error
+a.Invalid request
+If some issues occurred during the transmission of the request, our proxy received some invalid header, our reaction is to exit that child thread and wait for the next valid request. Because transmission error is not supposed to be handled by our program but by the server and TCP/IP. 
+
+
+b.Bad request
+If some bad requests happen, 400, 404 for example, our proxy can forward back the response with no problem. 
+
+
+
+
+4. Pressure test
+When we open many tabs and visit content heavy websites at the same time, many child threads are created and everything slows down. 
+We found that multithread is helpful with even only one tab. It significantly boosts performance. In a real implementation, we should always use multithread.

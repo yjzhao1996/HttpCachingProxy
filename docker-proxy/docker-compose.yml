@@ -1,0 +1,11 @@
+version: '3.3'
+
+services:
+  proxy:
+    build: .
+    command: bash -c "make && ./my_proxy"
+    volumes:
+      - "./my_proxy:/my_proxy"
+      - "./log:/var/log/erss"
+    ports:
+      - "12345:8080"
